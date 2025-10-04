@@ -111,10 +111,19 @@ async def balance_callback(callback: CallbackQuery):
 
 # Define buy stocks handlers
 @form_router.callback_query(F.data==BUY_CB)
-async def start_buy_callback(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer('Send me symbol of stock, which you want to buy')
-    await state.set_state(StockStates.waiting_symbol_buy)
-    await callback.answer()
+async def start_buy_callback(callback_or_message: CallbackQuery | Message, state: FSMContext):
+    # Important!
+    # This handler can be called either from Callback(inline button) or manually by other hadler
+    # So we need to check the type of the first argument and respond accordingly. If was called manually
+    # this function should not call .answer() method on CallbackQuery object, because it doesn't exist
+    if isinstance(callback_or_message, Message):
+        await callback_or_message.answer('Send me symbol of stock, which you want to buy')
+        await state.set_state(StockStates.waiting_symbol_buy)
+        return
+    else:
+        await callback_or_message.message.answer('Send me symbol of stock, which you want to buy')
+        await state.set_state(StockStates.waiting_symbol_buy)
+        await callback_or_message.answer()
 
 
 # Buy stock symbol handler after user sends symbol. Check if symbol is valid and get its price.
@@ -150,6 +159,7 @@ async def buy_amount(message: Message, state: FSMContext):
     if price != data['price']:
         await message.answer(f'Price of {data["symbol"]} has changed from {data["price"]}$ to {price}$. Please confirm the purchase again.')
         await state.clear()
+        # Restart the buy process so user can confirm the new price
         await start_buy_callback(message, state)
         return
     total_price = amount * float(price)
