@@ -2,9 +2,10 @@ import asyncio
 import logging
 
 import aiosqlite
+import aiohttp
 
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.types import Message, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -32,13 +33,12 @@ default_keyboard = Keyboards()
 
 # Define first /start command handler
 @form_router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, db: aiosqlite.Connection):
     # Check if user exists in DB, if not add them with default balance of 10000$
-    async with aiosqlite.connect('database/bot_db.db') as db:
-        async with db.execute('SELECT * FROM users WHERE id = ?', (message.from_user.id,)) as query:
-            if not await query.fetchone():
-                await db.execute('INSERT INTO users (id) VALUES (?)', (message.from_user.id,))
-                await db.commit()
+    async with db.execute('SELECT * FROM users WHERE id = ?', (message.from_user.id,)) as query:
+        if not await query.fetchone():
+            await db.execute('INSERT INTO users (id) VALUES (?)', (message.from_user.id,))
+            await db.commit()
     await message.answer(f'Hello, {message.from_user.full_name}\nThis is a stocks Telegram bot, that allows you to look if you\'re a good trader', 
                          reply_markup=Keyboards.default_keyboard())
     
@@ -69,8 +69,8 @@ async def price_callback(callback: CallbackQuery, state: FSMContext):
 
 # Check stock price handler after user sends symbol
 @form_router.message(StockStates.waiting_symbol, F.text.regexp(r"^[A-Za-z]{1,5}$"))
-async def check_price(message: Message, state: FSMContext):
-    price = await check_stock_price(message.text)
+async def check_price(message: Message, state: FSMContext, session: aiohttp.ClientSession):
+    price = await check_stock_price(message.text, session)
     # If price is None then response from API was invalid(any error)
     if price == None:
         await message.answer('Invalid symbol. Please try again.', reply_markup=Keyboards.default_keyboard())
@@ -82,15 +82,14 @@ async def check_price(message: Message, state: FSMContext):
 
 # Define balance check handler
 @form_router.callback_query(F.data==BALANCE_CB)
-async def balance_callback(callback: CallbackQuery, state: FSMContext):
+async def balance_callback(callback: CallbackQuery, state: FSMContext, db: aiosqlite.Connection):
     current_state = await state.get_state()
     if current_state is not None:
         await state.clear()
         
-    async with aiosqlite.connect('database/bot_db.db') as db:
-        async with db.execute('SELECT cash FROM users WHERE id = ?', (callback.from_user.id,)) as query:
-            balance = await query.fetchone()
-            await callback.message.answer(f'Your balance is {"{:.2f}".format(balance[0])}$', reply_markup=Keyboards.default_keyboard())
+    async with db.execute('SELECT cash FROM users WHERE id = ?', (callback.from_user.id,)) as query:
+        balance = await query.fetchone()
+        await callback.message.answer(f'Your balance is {"{:.2f}".format(balance[0])}$', reply_markup=Keyboards.default_keyboard())
     await callback.answer()
     
 
@@ -127,7 +126,7 @@ async def buy_symbol(message: Message, state: FSMContext):
     
 # Buy stock amount handler after user sends amount. Check if user has enough balance and complete the purchase
 @form_router.message(StockStates.waiting_amount_buy, F.text.regexp(r"^\d+$"))
-async def buy_amount(message: Message, state: FSMContext):
+async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connection):
     amount = int(message.text)
     if amount <= 0:
         await message.answer('Amount must be a positive integer. Please try again.', reply_markup=Keyboards.default_keyboard())
@@ -150,30 +149,29 @@ async def buy_amount(message: Message, state: FSMContext):
     total_price = amount * float(price)
 
     # Check if user has enough balance
-    async with aiosqlite.connect('database/bot_db.db') as db:
-        await db.execute('PRAGMA foreign_keys = ON')
-        try:
-            await db.execute('BEGIN')
-            async with db.execute('SELECT cash FROM users WHERE id = ?', (message.from_user.id,)) as query:
-                balance = await query.fetchone()
-                if int(balance[0]) < total_price:
-                    await message.answer(f'You don\'t have enough money to buy {amount} of {data["symbol"]}. Your balance is {balance[0]}$', reply_markup=Keyboards.default_keyboard())
-                    return
-                # Complete the purchase: deduct money from balance and add stocks to user_savings table
-                else:
-                    await db.execute('UPDATE users SET cash = cash - ? WHERE id = ?', (total_price, message.from_user.id))
-                    await db.execute('INSERT INTO user_savings (user_id, stock, quantity) VALUES (?, ?, ?) ON CONFLICT(user_id, stock) DO UPDATE SET quantity = quantity + excluded.quantity',
-                                    (message.from_user.id, data['symbol'], amount,))
-                    await db.execute('INSERT INTO history (user_id, stock, price, quantity) VALUES (?, ?, ?, ?)',
-                                     (message.from_user.id, data['symbol'], price, amount,))
-                    await db.commit()
-                    await message.answer(f'You have successfully bought {amount} of {data["symbol"]} for {total_price}$.', reply_markup=Keyboards.default_keyboard())
-        except Exception as e:
-            await db.rollback()
-            logging.error(f'Transaction failed: {e}')
-            await message.answer('An error occured, try again later', reply_markup=Keyboards.default_keyboard())
-        finally:
-            await state.clear()
+    await db.execute('PRAGMA foreign_keys = ON')
+    try:
+        await db.execute('BEGIN')
+        async with db.execute('SELECT cash FROM users WHERE id = ?', (message.from_user.id,)) as query:
+            balance = await query.fetchone()
+            if int(balance[0]) < total_price:
+                await message.answer(f'You don\'t have enough money to buy {amount} of {data["symbol"]}. Your balance is {balance[0]}$', reply_markup=Keyboards.default_keyboard())
+                return
+            # Complete the purchase: deduct money from balance and add stocks to user_savings table
+            else:
+                await db.execute('UPDATE users SET cash = cash - ? WHERE id = ?', (total_price, message.from_user.id))
+                await db.execute('INSERT INTO user_savings (user_id, stock, quantity) VALUES (?, ?, ?) ON CONFLICT(user_id, stock) DO UPDATE SET quantity = quantity + excluded.quantity',
+                                (message.from_user.id, data['symbol'], amount,))
+                await db.execute('INSERT INTO history (user_id, stock, price, quantity) VALUES (?, ?, ?, ?)',
+                                    (message.from_user.id, data['symbol'], price, amount,))
+                await db.commit()
+                await message.answer(f'You have successfully bought {amount} of {data["symbol"]} for {total_price}$.', reply_markup=Keyboards.default_keyboard())
+    except Exception as e:
+        await db.rollback()
+        logging.error(f'Transaction failed: {e}')
+        await message.answer('An error occured, try again later', reply_markup=Keyboards.default_keyboard())
+    finally:
+        await state.clear()
             
         
             
@@ -190,15 +188,14 @@ async def start_sell_callback(callback_or_message: CallbackQuery | Message, stat
     
     
 @form_router.message(StockStates.waiting_symbol_sell, F.text.regexp(r"^[A-Za-z]{1,5}$"))
-async def sell_symbol(message: Message, state: FSMContext):
-    async with aiosqlite.connect('database/bot_db.db') as db:
-        async with db.execute('SELECT stock FROM user_savings WHERE user_id = ? AND stock = ?', (message.from_user.id, message.text.upper())) as query:
-            stock = await query.fetchone()
-            if not stock:
-                await message.answer(f'You don\'t own any stocks of {message.text.upper()}. Please try again.', reply_markup=Keyboards.default_keyboard())
-                await state.clear()
-                return
-        stock = stock[0]
+async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connection):
+    async with db.execute('SELECT stock FROM user_savings WHERE user_id = ? AND stock = ?', (message.from_user.id, message.text.upper())) as query:
+        stock = await query.fetchone()
+        if not stock:
+            await message.answer(f'You don\'t own any stocks of {message.text.upper()}. Please try again.', reply_markup=Keyboards.default_keyboard())
+            await state.clear()
+            return
+    stock = stock[0]
 
     price = await check_stock_price(stock)
     if price == None:
@@ -212,14 +209,13 @@ async def sell_symbol(message: Message, state: FSMContext):
 
 
 @form_router.message(StockStates.waiting_amount_sell, F.text.regexp(r"^\d+$"))
-async def sell_amount(message: Message, state: FSMContext):
+async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connection):
     data = await state.get_data()
     
     amount = int(message.text)
     
-    async with aiosqlite.connect('database/bot_db.db') as db:
-        async with db.execute('SELECT quantity FROM user_savings WHERE user_id = ? AND stock = ?', (message.from_user.id, data['symbol'])) as query:
-            available_amount = await query.fetchone()
+    async with db.execute('SELECT quantity FROM user_savings WHERE user_id = ? AND stock = ?', (message.from_user.id, data['symbol'])) as query:
+        available_amount = await query.fetchone()
     
     if amount <= 0:
         await message.answer('Amount must be a positive integer. Please try again.', reply_markup=Keyboards.default_keyboard())
@@ -246,21 +242,28 @@ async def sell_amount(message: Message, state: FSMContext):
     
     total_price = amount * float(price)
     
-    async with aiosqlite.connect('database/bot_db.db') as db:
-        await db.execute('PRAGMA foreign_keys = ON')
-        
-        try:
-            await db.execute('BEGIN')
-            await db.execute('UPDATE users SET cash = cash + ? WHERE id = ?', (total_price, message.from_user.id))
-            await db.execute('UPDATE user_savings SET quantity = quantity - ? WHERE user_id = ? AND stock = ?', (amount, message.from_user.id, data['symbol']))
-            await db.execute('INSERT INTO history (user_id, stock, price, quantity) VALUES (?, ?, ?, ?)',
-                                (message.from_user.id, data['symbol'], price, -amount,))
-            await db.commit()
-        except Exception as e:
-            await db.rollback()
-            await message.answer('Error occurred while processing your request. Please try again later.', reply_markup=Keyboards.default_keyboard())
-            logging.error(f'Error occurred while selling stock: {e}')
-            return
+    await db.execute('PRAGMA foreign_keys = ON')
+    
+    try:
+        await db.execute('BEGIN')
+        await db.execute('UPDATE users SET cash = cash + ? WHERE id = ?', (total_price, message.from_user.id))
+        await db.execute('UPDATE user_savings SET quantity = quantity - ? WHERE user_id = ? AND stock = ?', (amount, message.from_user.id, data['symbol']))
+        await db.execute('INSERT INTO history (user_id, stock, price, quantity) VALUES (?, ?, ?, ?)',
+                            (message.from_user.id, data['symbol'], price, -amount,))
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        await message.answer('Error occurred while processing your request. Please try again later.', reply_markup=Keyboards.default_keyboard())
+        logging.error(f'Error occurred while selling stock: {e}')
+        return
 
     await message.answer(f'Successfully sold {amount} shares of {data["symbol"]} at {price}$.', reply_markup=Keyboards.default_keyboard())
     await state.clear()
+    
+    
+@form_router.message(StateFilter(None))
+async def delete_unwanted(message: Message):
+    try:
+        await message.delete()
+    except Exception:
+        logging.info('Cannot delete message')

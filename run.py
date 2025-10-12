@@ -23,13 +23,16 @@ storage = MemoryStorage()
 
 # Define main function to start the bot
 async def main():
-    bot = Bot(token=TOKEN)
     
-    dp = Dispatcher(storage=storage)
-    
-    dp.include_router(form_router)
-    
-    await dp.start_polling(bot)
+    async with aiohttp.ClientSession() as http_session, \
+                aiosqlite.connect('database/bot_db.db') as db_session:
+        bot = Bot(token=TOKEN)
+
+        dp = Dispatcher(storage=storage, db=db_session, session=http_session)
+
+        dp.include_router(form_router)
+
+        await dp.start_polling(bot)
 
 
 # Run the main function, set up logging
