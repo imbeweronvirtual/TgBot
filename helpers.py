@@ -1,4 +1,4 @@
-from config import ALPHA_API
+from config.config import ALPHA_API
 import aiohttp
 
 # Function to check stock price using Alpha Vantage API
