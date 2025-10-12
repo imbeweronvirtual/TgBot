@@ -113,8 +113,8 @@ async def start_buy_callback(callback_or_message: CallbackQuery | Message, state
 # Buy stock symbol handler after user sends symbol. Check if symbol is valid and get its price.
 # Then ask for amount to buy
 @form_router.message(StockStates.waiting_symbol_buy, F.text.regexp(r"^[A-Za-z]{1,5}$"))
-async def buy_symbol(message: Message, state: FSMContext):
-    price = await check_stock_price(message.text)
+async def buy_symbol(message: Message, state: FSMContext, session: aiohttp.ClientSession):
+    price = await check_stock_price(message.text, session)
     if price == None:
         await message.answer('Invalid symbol. Please try again.', reply_markup=Keyboards.default_keyboard())
         await state.clear()
@@ -126,7 +126,7 @@ async def buy_symbol(message: Message, state: FSMContext):
     
 # Buy stock amount handler after user sends amount. Check if user has enough balance and complete the purchase
 @form_router.message(StockStates.waiting_amount_buy, F.text.regexp(r"^\d+$"))
-async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connection):
+async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connection, session: aiohttp.ClientSession):
     amount = int(message.text)
     if amount <= 0:
         await message.answer('Amount must be a positive integer. Please try again.', reply_markup=Keyboards.default_keyboard())
@@ -135,7 +135,7 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
     
     data = await state.get_data()
     # Check if price has changed since user sent symbol. If it has, ask to confirm purchase again
-    price = await check_stock_price(data['symbol'])
+    price = await check_stock_price(data['symbol'], session)
     if price is None:
         await message.answer('Error fetching stock price. Please try again later.', reply_markup=Keyboards.default_keyboard())
         await state.clear()
@@ -188,7 +188,7 @@ async def start_sell_callback(callback_or_message: CallbackQuery | Message, stat
     
     
 @form_router.message(StockStates.waiting_symbol_sell, F.text.regexp(r"^[A-Za-z]{1,5}$"))
-async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connection):
+async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connection, session: aiohttp.ClientSession):
     async with db.execute('SELECT stock FROM user_savings WHERE user_id = ? AND stock = ?', (message.from_user.id, message.text.upper())) as query:
         stock = await query.fetchone()
         if not stock:
@@ -197,7 +197,7 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
             return
     stock = stock[0]
 
-    price = await check_stock_price(stock)
+    price = await check_stock_price(stock, session)
     if price == None:
         await message.answer('Failed to retrieve stock price. Please try again.', reply_markup=Keyboards.default_keyboard())
         await state.clear()
@@ -209,7 +209,7 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
 
 
 @form_router.message(StockStates.waiting_amount_sell, F.text.regexp(r"^\d+$"))
-async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connection):
+async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connection, session: aiohttp.ClientSession):
     data = await state.get_data()
     
     amount = int(message.text)
@@ -228,7 +228,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
         return
     
     # Check if price has changed since user sent symbol. If it has, ask to confirm sell again
-    price = await check_stock_price(data['symbol'])
+    price = await check_stock_price(data['symbol'], session)
     if price is None:
         await message.answer('Error fetching stock price. Please try again later.', reply_markup=Keyboards.default_keyboard())
         await state.clear()
