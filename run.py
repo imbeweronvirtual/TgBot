@@ -28,11 +28,11 @@ async def main():
                 aiosqlite.connect('database/bot_db.db') as db_session:
         bot = Bot(token=TOKEN)
 
-        dp = Dispatcher(storage=storage, db=db_session, session=http_session)
+        dp = Dispatcher(storage=storage, db=db_session, session=http_session, bot=bot)
 
         dp.include_router(form_router)
 
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, polling_timeout=5)
 
 
 # Run the main function, set up logging
