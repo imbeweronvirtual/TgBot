@@ -8,13 +8,13 @@ class Keyboards:
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text='👤 Profile', callback_data=MY_STOCKS_CB), 
+                    InlineKeyboardButton(text='👤 My Profile', callback_data=MY_STOCKS_CB), 
                 ],
                 [
-                    InlineKeyboardButton(text='Buy stocks', callback_data=BUY_CB),
-                    InlineKeyboardButton(text='Sell stocks', callback_data=SELL_CB)
+                    InlineKeyboardButton(text='📈 Buy Stocks', callback_data=BUY_CB),
+                    InlineKeyboardButton(text='📉 Sell Stocks', callback_data=SELL_CB)
                 ],
-                [InlineKeyboardButton(text='Check stocks price', callback_data=PRICE_CB)],
+                [InlineKeyboardButton(text='📊 Check Price', callback_data=PRICE_CB)],
             ]
         )
     @staticmethod

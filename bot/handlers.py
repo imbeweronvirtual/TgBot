@@ -95,7 +95,7 @@ async def return_main(callback: CallbackQuery, state: FSMContext):
     current_state = await state.get_state()
 
     if current_state is not None:
-        state.clear()
+        await state.clear()
 
     callback.answer()
     
@@ -116,6 +116,8 @@ async def price_callback(callback: CallbackQuery, state: FSMContext):
 # Check stock price handler after user sends symbol
 @form_router.message(StockStates.waiting_symbol, F.text.regexp(r"^[A-Za-z]{1,5}$"))
 async def check_price(message: Message, state: FSMContext, session: aiohttp.ClientSession, bot: Bot):
+    await delete_unwanted(message)
+    
     data = await state.get_data()
     
     price = await check_stock_price(message.text, session)
@@ -220,7 +222,7 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
         )
         await state.clear()
         return
-    if price != data['price']:
+    if price > data['price']:
         text = [CONFIRM_BUY.format(symbol=data["symbol"], old_price=data["price"], new_price=price), DEFAULT_HELLO]
         await edit_bot_message(
             text='\n\n'.join(text),
@@ -329,7 +331,7 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
         return
     await state.update_data(symbol=stock[0], price=price)
     await state.set_state(StockStates.waiting_amount_sell)
-    text = [CURRENT_PRICE.format(symbol=stock[0], price=price), SEND_AMOUNT_SELL]
+    text = [CURRENT_PRICE.format(symbol=stock[0], price=price), SEND_AMOUNT_SELL.format(symbol=stock[0])]
     await edit_bot_message(
         text=' '.join(text),
         event=message,
@@ -362,7 +364,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
         return
     
     if not available_amount or amount > available_amount[0]:
-        text = [NOT_ENOUGHT_STOCKS.format(symbol=data['symbol'], amount=available_amount[0]), DEFAULT_HELLO]
+        text = [NOT_ENOUGHT_STOCKS.format(symbol=data['symbol'], asked_amount=amount, owned_amount=available_amount[0]), DEFAULT_HELLO]
         await edit_bot_message(
             text='\n\n'.join(text),
             event=message,
@@ -438,7 +440,7 @@ async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection):
         savings = await query.fetchall()
         
     if not savings[0][0]:
-        try:
+        try: # TODO: FIX THIS(respond always as a new message, also doesn't send balance)
             await callback.message.edit_text('You don\'t have any stocks yet', reply_markup=Keyboards.default_keyboard())
         except Exception:
             await callback.message.answer('You don\'t have any stocks yet', reply_markup=Keyboards.default_keyboard())
@@ -462,7 +464,7 @@ async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection):
         
     
     
-@form_router.message(StateFilter(None))
+@form_router.message()
 async def delete_unwanted(message: Message):
     try:
         await message.delete()

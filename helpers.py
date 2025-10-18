@@ -19,6 +19,7 @@ async def check_stock_price(symbol: str, session: aiohttp.ClientSession):
         if response.status != 200:
             return None
         data = await response.json()
+        logging.info(f'Alpha response: {data}')
     
     try:
         # Extract the closing price from the most recent trading day
@@ -26,7 +27,8 @@ async def check_stock_price(symbol: str, session: aiohttp.ClientSession):
         close_price = time_series[max(time_series.keys())]["4. close"]
         return close_price
 
-    except Exception:
+    except Exception as e:
+        logging.warning(e)
         return None
     
 async def edit_bot_message(text:str, event: Message | CallbackQuery, message_id: int | None = None, bot: Bot | None = None, markup: InlineKeyboardMarkup | None = None):
