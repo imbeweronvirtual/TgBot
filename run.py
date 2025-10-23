@@ -13,6 +13,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config.config import TOKEN
 from bot.handlers import form_router
+from bot.admin import admin_router
 
 # Initialize storage and router
 storage = MemoryStorage()
@@ -30,6 +31,7 @@ async def main():
 
         dp = Dispatcher(storage=storage, db=db_session, session=http_session, bot=bot)
 
+        dp.include_router(admin_router)
         dp.include_router(form_router)
 
         await dp.start_polling(bot, polling_timeout=5)

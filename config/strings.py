@@ -17,7 +17,7 @@ CURRENT_PRICE='💹 <b>{symbol}</b>: <code>${price}</code>'
 CURRENT_BALANCE='💰 Your balance is <b>${price:.2f}</b>'
 
 # === Buying ===
-SEND_SYMBOL_BUY='🛒 What stock would you like to buy? (e.g., TSLA)'
+SEND_SYMBOL_BUY='🛒 What stock would you like to buy? (e.g., TSLA)\n<b>💵 Balance of your account: {balance:.2f}$</b>'
 SEND_AMOUNT_BUY='🔢 Please enter the amount you wish to buy (e.g., 5)'
 CONFIRM_BUY='⚠️ <b>Attention!</b>\nThe price of <b>{symbol}</b> has changed from ${old_price} to <b>${new_price}</b>.\n\nPlease confirm the purchase at the new price.'
 NO_MONEY_BUY='😥 <b>Insufficient Funds.</b>\nYou tried to buy {amount} <b>{symbol}</b>, but you only have <b>${balance:.2f}</b> in your account.'

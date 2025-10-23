@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from config.config import ALPHA_API
@@ -7,6 +8,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup
 from aiogram.exceptions import TelegramBadRequest
 
 import aiohttp
+import aiosqlite
 
 # Function to check stock price using Alpha Vantage API
 async def check_stock_price(symbol: str, session: aiohttp.ClientSession):
@@ -19,7 +21,6 @@ async def check_stock_price(symbol: str, session: aiohttp.ClientSession):
         if response.status != 200:
             return None
         data = await response.json()
-        logging.info(f'Alpha response: {data}')
     
     try:
         # Extract the closing price from the most recent trading day
@@ -67,4 +68,84 @@ async def edit_bot_message(text:str, event: Message | CallbackQuery, message_id:
         
     await event.answer(text, reply_markup=markup, parse_mode='HTML')
     
+
+async def calc_profit(user_id: int, stock: str, quantity: int, db: aiosqlite.Connection) -> int:
+    async with db.execute('SELECT quantity, price FROM history WHERE user_id = ? AND stock = ? ORDER BY time ASC', (user_id, stock,)) as query:
+        transactions = await query.fetchall()
+         
+    transactions_stack = []
+    profit = 0.0
+    
+    for quantity, price in transactions:
+        if quantity > 0:
+            transactions_stack.append([quantity, price])
+        if quantity < 0:
+            quantity = -quantity
+            
+            while quantity > 0 and transactions_stack:
+                diff = min(quantity, transactions_stack[0][0])
+                
+                transactions_stack[0][0] -= diff
+                quantity -= diff
+                
+                if transactions_stack[0][0] == 0:
+                    transactions_stack.pop(0)
+    
+    for quantity, price in transactions_stack:
+        profit += quantity * price
+    
+    return profit
+
+async def fetch_stock_data(user_id: int, stock: str, quantity: int, session: aiohttp.ClientSession, db: aiosqlite.Connection):
+    try:
+        price_str = await check_stock_price(stock, session)
+        price = float(price_str) if price_str else 0.0
+        
+        if price == 0:
+            logging.warning(f"Got zero price for {stock}, skipping calculation.")
+            return f"  • <b>{stock}:</b> {quantity}pcs. (Error: <code>Price is $0.00</code>)"
+        
+        earned = await calc_profit(user_id=user_id, stock=stock, quantity=quantity, db=db)
+        
+        total = price * quantity
+        pure_profit = total - earned
+        
+        # Return the final string for this one stock
+        return f"  • <b>{stock}:</b> {quantity}pcs. (Total: <b>${total:,.2f}</b> / Profit: <b>${pure_profit:,.2f}</b>)"
+    except Exception as e:
+        logging.error(f"Failed to fetch data for {stock}: {e}")
+        return f"  • <b>{stock}:</b> {quantity}pcs. (Unable to calculate profit)"
+    
+async def get_full_user_report(user_id: int, db: aiosqlite.Connection) -> dict | None:
+    if not user_id:
+        return None
+    
+    async with db.execute('SELECT id, cash, created FROM users WHERE id = ?', (user_id,)) as query:
+        main_info = await query.fetchone()
+        
+    if not main_info:
+        return None
+    
+    async def get_portfolio():
+        async with db.execute('SELECT stock, quantity FROM user_savings WHERE user_id = ?', (user_id,)) as query:
+            return await query.fetchall()
+        
+    async def get_history():
+        async with db.execute('SELECT id, stock, price, quantity, time FROM history WHERE user_id = ?', (user_id,)) as query:
+            return await query.fetchall()
+    
+    savings, history = await asyncio.gather(get_portfolio(), get_history())
+    
+    
+    report = {
+        'user_info': {
+            'id': main_info[0],
+            'cash': f"{main_info[1]:,.2f}",
+            'created': main_info[2]
+        },
+       'savings': savings,
+       'history': history
+    }
+    
+    return report
     

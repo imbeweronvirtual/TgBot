@@ -12,8 +12,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import EditMessageText
 
-from config.config import TOKEN, ALPHA_API
-from helpers import check_stock_price, edit_bot_message
+from config.config import TOKEN, ALPHA_API, API_CALLS_RESTRICTION
+from helpers import check_stock_price, edit_bot_message, fetch_stock_data
 
 from config.strings import (
     DEFAULT_HELLO,
@@ -37,7 +37,7 @@ from config.strings import (
     NO_STOCKS,
     ANY_ERROR,
 )
-from config.callbacks import BALANCE_CB, MY_STOCKS_CB, BUY_CB, SELL_CB, PRICE_CB, RETURN_CB
+from config.callbacks import MY_STOCKS_CB, BUY_CB, SELL_CB, PRICE_CB, RETURN_CB
 from bot.keyboards import Keyboards
 
 # Initialize states
@@ -47,6 +47,8 @@ class StockStates(StatesGroup):
     waiting_amount_buy = State()
     waiting_symbol_sell = State()
     waiting_amount_sell = State()
+    
+    waiting_user_id_check = State()
     
 # Initialize router and default keyboard
 form_router = Router()
@@ -62,7 +64,7 @@ async def cmd_start(message: Message, db: aiosqlite.Connection):
         if not await query.fetchone():
             await db.execute('INSERT INTO users (id) VALUES (?)', (message.from_user.id,))
             await db.commit()
-    await message.answer(DEFAULT_HELLO, reply_markup=Keyboards.default_keyboard())
+    await message.answer(DEFAULT_HELLO, reply_markup=Keyboards.default_keyboard(), parse_mode='HTML')
     
     
 # Define /cancel command handler and "cancel" text handler to cancel any ongoing state if return button fails   
@@ -146,9 +148,11 @@ async def check_price(message: Message, state: FSMContext, session: aiohttp.Clie
 
 # Define buy stocks handlers
 @form_router.callback_query(F.data==BUY_CB)
-async def start_buy_callback(callback: CallbackQuery, state: FSMContext, bot: Bot):
+async def start_buy_callback(callback: CallbackQuery, state: FSMContext, bot: Bot, db: aiosqlite.Connection):
+    query = await db.execute('SELECT cash FROM users WHERE id = ?', (callback.from_user.id,))
+    balance = await query.fetchone()
     await edit_bot_message(
-        text=SEND_SYMBOL_BUY,
+        text=SEND_SYMBOL_BUY.format(balance=balance[0] if balance else 0),
         event=callback,
         message_id=callback.message.message_id,
         bot=bot,
@@ -284,17 +288,40 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
         
             
 @form_router.callback_query(F.data==SELL_CB)
-async def start_sell_callback(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    await edit_bot_message(
-        text=SEND_SYMBOL_SELL,
-        event=callback,
-        message_id=callback.message.message_id,
-        bot=bot,
-        markup=Keyboards.return_keyboard()
-    )
-    await state.set_state(StockStates.waiting_symbol_sell)
-    await state.update_data(bot_message_id=callback.message.message_id)
+async def start_sell_callback(callback: CallbackQuery, state: FSMContext, bot: Bot, db: aiosqlite.Connection):
+    async with db.execute('SELECT stock, quantity FROM user_savings WHERE user_id = ?', (callback.from_user.id,)) as query:
+        savings = await query.fetchall()
+        
+    if not savings:
+        await edit_bot_message(
+            text=NO_STOCKS,
+            event=callback,
+            markup=Keyboards.return_keyboard()
+        )
+        return
+    else:
+        formatted_message = [SEND_SYMBOL_SELL + "\n\n"]
+        formatted_message.append("<b>💼 Your stock portfolio:</b>\n")
+        for stock, quantity in savings:
+            formatted_message.append(f'  • <b>{stock}:</b> {quantity}pcs.')
+        formatted_message = '\n'.join(formatted_message)
+        
+        await edit_bot_message(
+            text=formatted_message,
+            event=callback,
+            message_id=callback.message.message_id,
+            bot=bot,
+            markup=Keyboards.return_keyboard()
+        )
+        
+        await state.set_state(StockStates.waiting_symbol_sell)
+        await state.update_data(bot_message_id=callback.message.message_id)
+        
     await callback.answer()
+        
+    
+    
+    
     
     
     
@@ -434,33 +461,32 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
     
 
 @form_router.callback_query(F.data==MY_STOCKS_CB)
-async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection):
+async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection, session: aiohttp.ClientSession):
     # Query that joins two tables, firsrt - users, for receiving balance of account, second = user_savings to receive stocks owned
     async with db.execute('SELECT s.stock, s.quantity, u.cash FROM users u LEFT JOIN user_savings s ON u.id = s.user_id WHERE u.id = ?;', (callback.from_user.id,)) as query:
         savings = await query.fetchall()
         
+    formatted_message = [f"<b>💵 Balance of your account: {"{:.2f}".format(savings[0][2])}$</b>\n\n"]
     if not savings[0][0]:
-        try: # TODO: FIX THIS(respond always as a new message, also doesn't send balance)
-            await callback.message.edit_text('You don\'t have any stocks yet', reply_markup=Keyboards.default_keyboard())
-        except Exception:
-            await callback.message.answer('You don\'t have any stocks yet', reply_markup=Keyboards.default_keyboard())
-        finally:
-            await callback.answer()
-        return
+        formatted_message.append("<b>💼 You don't have any stocks yet.</b>")
     else:
-        formatted_message = [f"<b>💵 Balance of your account: {"{:.2f}".format(savings[0][2])}$</b>\n\n"]
         formatted_message.append("<b>💼 Your stock portfolio:</b>\n")
-        for stock, quantity, _ in savings:
-            formatted_message.append(f'\t• <b>{stock}:</b> {quantity}pcs.')
-            
-        formatted_message = '\n'.join(formatted_message)
         
+        tasks = []
+        
+        for stock, quantity, _ in savings:
+            tasks.append(fetch_stock_data(user_id=callback.from_user.id, stock=stock, quantity=quantity, session=session, db=db))
+            
         try:
-            await callback.message.edit_text(formatted_message, parse_mode='HTML', reply_markup=Keyboards.return_keyboard())
+            stock_lines = await asyncio.gather(*tasks)
+            formatted_message.extend(stock_lines)
         except Exception as e:
-            logging.warning(e)
-        finally:
-            await callback.answer()
+            logging.error(f'Error during gather: {e}')
+            formatted_message.append('\n❌ Service not available now')
+        
+    
+    await edit_bot_message(text='\n'.join(formatted_message), event=callback, markup=Keyboards.return_keyboard())
+    await callback.answer()
         
     
     
