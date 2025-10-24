@@ -5,7 +5,12 @@ from config.config import ALPHA_API
 
 from aiogram import Bot
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramAPIError,
+    TelegramRetryAfter,
+    TelegramForbiddenError,
+)
 
 import aiohttp
 import aiosqlite
@@ -149,3 +154,42 @@ async def get_full_user_report(user_id: int, db: aiosqlite.Connection) -> dict |
     
     return report
     
+    
+async def send_message(bot: Bot, user_id: int, text: str, disable_notification: bool = False) -> bool:
+    """
+    Safe messages sender for broadcasting (aiogram 3.x version)
+
+    :param bot: The bot instance (must be passed in).
+    :param user_id: The target user's ID.
+    :param text: The message text to send.
+    :param disable_notification: Send silently.
+    :return: True if sent, False if failed.
+    """
+    try:
+        await bot.send_message(user_id, text, disable_notification=disable_notification, parse_mode="HTML")
+        
+    except TelegramRetryAfter as e:
+        # Flood limit exceeded. Sleep for the specified time and retry.
+        logging.error(f"Target [ID:{user_id}]: Flood limit exceeded. Sleep {e.timeout} seconds.")
+        await asyncio.sleep(e.timeout)
+        return await send_message(bot, user_id, text, disable_notification)  # Recursive call
+
+    except (TelegramForbiddenError, TelegramBadRequest) as e:
+        # Catches BotBlocked, UserDeactivated, and ChatNotFound.
+        # These users are unreachable, so we log and move on.
+        logging.error(f"Target [ID:{user_id}]: Unreachable. {e.message}")
+        
+    except TelegramAPIError as e:
+        # Catch any other unexpected Telegram error
+        logging.exception(f"Target [ID:{user_id}]: Failed with unhandled TelegramAPIError: {e}")
+        
+    except Exception as e:
+        # Catch non-Telegram errors (e.g., network issues)
+        logging.exception(f"Target [ID:{user_id}]: Failed with a non-Telegram error: {e}")
+        
+    else:
+        # Only log success if no exceptions were raised
+        logging.info(f"Target [ID:{user_id}]: success")
+        return True
+        
+    return False
