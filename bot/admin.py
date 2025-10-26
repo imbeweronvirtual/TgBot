@@ -22,7 +22,7 @@ class AdminStates(StatesGroup):
     waiting_user_id_check = State()
     waiting_text_broadcast = State()
     waiting_user_id_delete = State()
-    confimation_user_delete = State()
+    confirmation_user_delete = State()
 
 
 @admin_router.message(Command('admin'), F.from_user.id.in_(ADMIN_IDS))
@@ -54,11 +54,10 @@ async def get_user_info(message: Message, state: FSMContext, db: aiosqlite.Conne
     
     main_info = report['user_info']
     
-    response = [f"All information about user <code>{user_id}</code>:\n"]
-    
-    response.append(f"User_id: {main_info['id']}\nCurrent balance: {main_info['cash']}\nCreated: {main_info['created']}\n")
-    
-    response.append('User\'s portfolio:')
+    response = [f"All information about user <code>{user_id}</code>:\n",
+                f"User_id: {main_info['id']}\nCurrent balance: {main_info['cash']}\nCreated: {main_info['created']}\n",
+                'User\'s portfolio:']
+
     if not report['savings']:
         response.append('User doesn\'t have any stocks\n')
     else:
@@ -124,11 +123,11 @@ async def confirm_user_delete(message: Message, state: FSMContext, db: aiosqlite
         return
     
     await state.update_data(id=user_id[0])
-    await state.set_state(AdminStates.confimation_user_delete)
+    await state.set_state(AdminStates.confirmation_user_delete)
     await message.answer(f'Confirm your action to delete user {user_id[0]} with \"yes\" if you want to delete or type anything else if you want to cancel')
     
 
-@admin_router.message(AdminStates.confimation_user_delete, F.from_user.id.in_(ADMIN_IDS))
+@admin_router.message(AdminStates.confirmation_user_delete, F.from_user.id.in_(ADMIN_IDS))
 async def user_delete(message: Message, state: FSMContext, db: aiosqlite.Connection):
     if message.text.lower().strip() != 'yes':
         await message.answer('Cancelled.', reply_markup=Keyboards.admin_keyboard())
