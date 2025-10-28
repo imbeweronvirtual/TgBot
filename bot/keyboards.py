@@ -5,6 +5,7 @@ from config.callbacks import (
     PRICE_CB,
     RETURN_CB,
     CHECK_USER_CB,
+    SHOW_ALL_CB,
     DELETE_USER_CB,
     BROADCAST_CB,
 )
@@ -37,6 +38,7 @@ class Keyboards:
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [
+                    InlineKeyboardButton(text='Show all users', callback_data=SHOW_ALL_CB),
                     InlineKeyboardButton(text='Check user', callback_data=CHECK_USER_CB)
                 ],
                 [

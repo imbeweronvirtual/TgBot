@@ -8,5 +8,6 @@ RETURN_CB='return_main'
 
 # Define callbacks for admin panel
 CHECK_USER_CB='check_user_info'
+SHOW_ALL_CB='show_all_users'
 DELETE_USER_CB='delete_user'
 BROADCAST_CB='broadcast'

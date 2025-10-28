@@ -27,7 +27,7 @@ BUY_SUCCESSFUL='✅ <b>Purchase Successful!</b>\nYou bought {amount} <b>{symbol}
 SEND_SYMBOL_SELL='🏷️ Which stock from your portfolio would you like to sell?'
 NO_STOCK_SELL='❌ <b>Stock Not Found.</b>\nYou do not own any <b>{symbol}</b> shares.'
 SEND_AMOUNT_SELL='🔢 How many shares of <b>{symbol}</b> would you like to sell?'
-NOT_ENOUGHT_STOCKS='⚠️ <b>Not Enough Shares.</b>\nYou are trying to sell {asked_amount} <b>{symbol}</b>, but you only own <b>{owned_amount} shares.</b>'
+NOT_ENOUGH_STOCKS= '⚠️ <b>Not Enough Shares.</b>\nYou are trying to sell {asked_amount} <b>{symbol}</b>, but you only own <b>{owned_amount} shares.</b>'
 CONFIRM_SELL='⚠️ <b>Attention!</b>\nThe price of <b>{symbol}</b> has changed from ${old_price} to <b>${new_price}</b>.\n\nPlease confirm the sale at the new price.'
 SELL_SUCCESSFUL='💸 <b>Sale Successful!</b>\nYou sold {amount} <b>{symbol}</b> for <b>${price}</b>.'
 

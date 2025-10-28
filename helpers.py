@@ -74,7 +74,7 @@ async def edit_bot_message(text:str, event: Message | CallbackQuery, message_id:
     await event.answer(text, reply_markup=markup, parse_mode='HTML')
     
 
-async def calc_profit(user_id: int, stock: str, quantity: int, db: aiosqlite.Connection) -> int:
+async def calc_profit(user_id: int, stock: str, db: aiosqlite.Connection) -> float:
     async with db.execute('SELECT quantity, price FROM history WHERE user_id = ? AND stock = ? ORDER BY time ASC', (user_id, stock,)) as query:
         transactions = await query.fetchall()
          
@@ -110,7 +110,7 @@ async def fetch_stock_data(user_id: int, stock: str, quantity: int, session: aio
             logging.warning(f"Got zero price for {stock}, skipping calculation.")
             return f"  • <b>{stock}:</b> {quantity}pcs. (Error: <code>Price is $0.00</code>)"
         
-        earned = await calc_profit(user_id=user_id, stock=stock, quantity=quantity, db=db)
+        earned = await calc_profit(user_id=user_id, stock=stock, db=db)
         
         total = price * quantity
         pure_profit = total - earned

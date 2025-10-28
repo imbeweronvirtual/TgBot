@@ -4,15 +4,12 @@ import logging
 import aiosqlite
 import aiohttp
 
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import CommandStart, Command, StateFilter
-from aiogram.types import Message, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram import Bot, F, Router
+from aiogram.filters import CommandStart, Command
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.methods import EditMessageText
 
-from config.config import TOKEN, ALPHA_API, API_CALLS_RESTRICTION
 from helpers import check_stock_price, edit_bot_message, fetch_stock_data
 
 from config.strings import (
@@ -21,14 +18,13 @@ from config.strings import (
     INVALID_SYMBOL,
     INVALID_AMOUNT,
     CURRENT_PRICE,
-    CURRENT_BALANCE,
     SEND_AMOUNT_BUY,
     SERVER_ERROR_PRICE,
     CONFIRM_BUY,
     CONFIRM_SELL,
     NO_MONEY_BUY,
     NO_STOCK_SELL,
-    NOT_ENOUGHT_STOCKS,
+    NOT_ENOUGH_STOCKS,
     BUY_SUCCESSFUL,
     SELL_SUCCESSFUL,
     SEND_AMOUNT_SELL,
@@ -67,23 +63,7 @@ async def cmd_start(message: Message, db: aiosqlite.Connection):
     await message.answer(DEFAULT_HELLO, reply_markup=Keyboards.default_keyboard(), parse_mode='HTML')
     
     
-# Define /cancel command handler and "cancel" text handler to cancel any ongoing state if return button fails   
-@form_router.message(Command("cancel"))
-@form_router.message(F.text.casefold() == "cancel")
-async def cancel_handler(message: Message, state: FSMContext) -> None:
-    current_state = await state.get_state()
-    if current_state is None:
-        await delete_unwanted(message)
-        return
 
-    logging.info("Cancelling state %r", current_state)
-    await state.clear()
-    
-    text = DEFAULT_HELLO.format(name = message.from_user.full_name)
-    await message.answer(
-        "Cancelled.\n" + text,
-        reply_markup=Keyboards.default_keyboard(),
-    )
     
     
 @form_router.callback_query(F.data==RETURN_CB)
@@ -99,7 +79,7 @@ async def return_main(callback: CallbackQuery, state: FSMContext):
     if current_state is not None:
         await state.clear()
 
-    callback.answer()
+    await callback.answer()
     
     
 # Define price check handler
@@ -124,7 +104,7 @@ async def check_price(message: Message, state: FSMContext, session: aiohttp.Clie
     
     price = await check_stock_price(message.text, session)
     # If price is None then response from API was invalid(any error)
-    if price == None:
+    if price is None:
         text = [ANY_ERROR, DEFAULT_HELLO]
         await edit_bot_message(
             text='\n\n'.join(text),
@@ -149,8 +129,8 @@ async def check_price(message: Message, state: FSMContext, session: aiohttp.Clie
 # Define buy stocks handlers
 @form_router.callback_query(F.data==BUY_CB)
 async def start_buy_callback(callback: CallbackQuery, state: FSMContext, bot: Bot, db: aiosqlite.Connection):
-    query = await db.execute('SELECT cash FROM users WHERE id = ?', (callback.from_user.id,))
-    balance = await query.fetchone()
+    async with db.execute('SELECT cash FROM users WHERE id = ?', (callback.from_user.id,)) as query:
+        balance = await query.fetchone()
     await edit_bot_message(
         text=SEND_SYMBOL_BUY.format(balance=balance[0] if balance else 0),
         event=callback,
@@ -172,7 +152,7 @@ async def buy_symbol(message: Message, state: FSMContext, session: aiohttp.Clien
     data = await state.get_data()
     
     price = await check_stock_price(message.text, session)
-    if price == None:
+    if price is None:
         await edit_bot_message(
             text='\n\n'.join([INVALID_SYMBOL, DEFAULT_HELLO]),
             event=message,
@@ -300,8 +280,7 @@ async def start_sell_callback(callback: CallbackQuery, state: FSMContext, bot: B
         )
         return
     else:
-        formatted_message = [SEND_SYMBOL_SELL + "\n\n"]
-        formatted_message.append("<b>💼 Your stock portfolio:</b>\n")
+        formatted_message = [SEND_SYMBOL_SELL + "\n\n", "<b>💼 Your stock portfolio:</b>\n"]
         for stock, quantity in savings:
             formatted_message.append(f'  • <b>{stock}:</b> {quantity}pcs.')
         formatted_message = '\n'.join(formatted_message)
@@ -346,7 +325,7 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
             return
 
     price = await check_stock_price(stock[0], session)
-    if price == None:
+    if price is None:
         await edit_bot_message(
             text='\n\n'.join([ANY_ERROR, DEFAULT_HELLO]),
             event=message,
@@ -391,7 +370,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
         return
     
     if not available_amount or amount > available_amount[0]:
-        text = [NOT_ENOUGHT_STOCKS.format(symbol=data['symbol'], asked_amount=amount, owned_amount=available_amount[0]), DEFAULT_HELLO]
+        text = [NOT_ENOUGH_STOCKS.format(symbol=data['symbol'], asked_amount=amount, owned_amount=available_amount[0]), DEFAULT_HELLO]
         await edit_bot_message(
             text='\n\n'.join(text),
             event=message,
@@ -462,7 +441,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
 
 @form_router.callback_query(F.data==MY_STOCKS_CB)
 async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection, session: aiohttp.ClientSession):
-    # Query that joins two tables, firsrt - users, for receiving balance of account, second = user_savings to receive stocks owned
+    # Query that joins two tables, first - users, for receiving balance of account, second = user_savings to receive stocks owned
     async with db.execute('SELECT s.stock, s.quantity, u.cash FROM users u LEFT JOIN user_savings s ON u.id = s.user_id WHERE u.id = ?;', (callback.from_user.id,)) as query:
         savings = await query.fetchall()
         
