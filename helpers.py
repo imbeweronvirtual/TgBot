@@ -75,7 +75,7 @@ async def edit_bot_message(text:str, event: Message | CallbackQuery, message_id:
     
 
 async def calc_profit(user_id: int, stock: str, db: aiosqlite.Connection) -> float:
-    async with db.execute('SELECT quantity, price FROM history WHERE user_id = ? AND stock = ? ORDER BY time ASC', (user_id, stock,)) as query:
+    async with db.execute('SELECT quantity, price FROM history WHERE user_id = ? AND stock = ?', (user_id, stock,)) as query:
         transactions = await query.fetchall()
          
     transactions_stack = []
@@ -121,22 +121,26 @@ async def fetch_stock_data(user_id: int, stock: str, quantity: int, session: aio
         logging.error(f"Failed to fetch data for {stock}: {e}")
         return f"  • <b>{stock}:</b> {quantity}pcs. (Unable to calculate profit)"
     
-async def get_full_user_report(user_id: int, db: aiosqlite.Connection) -> dict | None:
-    if not user_id:
+async def get_full_user_report(db: aiosqlite.Connection, user_id: int | None = None, username: str | None = None) -> dict | None:
+    if not (user_id or username):
         return None
-    
-    async with db.execute('SELECT id, cash, created FROM users WHERE id = ?', (user_id,)) as query:
-        main_info = await query.fetchone()
+
+    if user_id:
+        async with db.execute('SELECT id, cash, created FROM users WHERE id = ?', (user_id,)) as query:
+            main_info = await query.fetchone()
+    else:
+        async with db.execute('SELECT id, cash, created FROM users WHERE username = ?', (username,)) as query:
+            main_info = await query.fetchone()
         
     if not main_info:
         return None
     
     async def get_portfolio():
-        async with db.execute('SELECT stock, quantity FROM user_savings WHERE user_id = ?', (user_id,)) as query:
+        async with db.execute('SELECT stock, quantity FROM user_savings WHERE user_id = ?', (main_info[0],)) as query:
             return await query.fetchall()
         
     async def get_history():
-        async with db.execute('SELECT id, stock, price, quantity, time FROM history WHERE user_id = ?', (user_id,)) as query:
+        async with db.execute('SELECT id, stock, price, quantity, time FROM history WHERE user_id = ?', (main_info[0],)) as query:
             return await query.fetchall()
     
     savings, history = await asyncio.gather(get_portfolio(), get_history())

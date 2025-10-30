@@ -5,7 +5,7 @@ import aiosqlite
 import aiohttp
 
 from aiogram import Bot, F, Router
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -55,10 +55,10 @@ default_keyboard = Keyboards()
 # Define first /start command handler
 @form_router.message(CommandStart())
 async def cmd_start(message: Message, db: aiosqlite.Connection):
-    # Check if user exists in DB, if not add them with default balance of 10000$
+    # Check if user exists in DB, if not, add them with a default balance of 10 000$
     async with db.execute('SELECT * FROM users WHERE id = ?', (message.from_user.id,)) as query:
         if not await query.fetchone():
-            await db.execute('INSERT INTO users (id) VALUES (?)', (message.from_user.id,))
+            await db.execute('INSERT INTO users (id, username) VALUES (?, ?)', (message.from_user.id, message.from_user.username,))
             await db.commit()
     await message.answer(DEFAULT_HELLO, reply_markup=Keyboards.default_keyboard(), parse_mode='HTML')
     
@@ -473,5 +473,5 @@ async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection, sessi
 async def delete_unwanted(message: Message):
     try:
         await message.delete()
-    except Exception:
-        logging.info('Cannot delete message')
+    except Exception as e:
+        logging.info(f'Cannot delete message: {e}')
