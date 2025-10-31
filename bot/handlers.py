@@ -10,7 +10,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from helpers import check_stock_price, edit_bot_message, fetch_stock_data
+from helpers import check_stock_price, edit_bot_message, fetch_stock_data, username_db_check
 
 from config.strings import (
     DEFAULT_HELLO,
@@ -58,7 +58,7 @@ async def cmd_start(message: Message, db: aiosqlite.Connection):
     # Check if user exists in DB, if not, add them with a default balance of 10 000$
     async with db.execute('SELECT * FROM users WHERE id = ?', (message.from_user.id,)) as query:
         if not await query.fetchone():
-            await db.execute('INSERT INTO users (id, username) VALUES (?, ?)', (message.from_user.id, message.from_user.username,))
+            await db.execute('INSERT INTO users (id, username) VALUES (?, ?)', (message.from_user.id, message.from_user.username if message.from_user.username else 'N/A',))
             await db.commit()
     await message.answer(DEFAULT_HELLO, reply_markup=Keyboards.default_keyboard(), parse_mode='HTML')
     
@@ -67,7 +67,7 @@ async def cmd_start(message: Message, db: aiosqlite.Connection):
     
     
 @form_router.callback_query(F.data==RETURN_CB)
-async def return_main(callback: CallbackQuery, state: FSMContext):
+async def return_main(callback: CallbackQuery, state: FSMContext, db: aiosqlite.Connection):
     await edit_bot_message(
         text=DEFAULT_HELLO,
         event=callback,
@@ -78,6 +78,8 @@ async def return_main(callback: CallbackQuery, state: FSMContext):
 
     if current_state is not None:
         await state.clear()
+
+    await username_db_check(event=callback, db=db)
 
     await callback.answer()
     

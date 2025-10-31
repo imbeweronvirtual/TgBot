@@ -34,7 +34,7 @@ async def check_stock_price(symbol: str, session: aiohttp.ClientSession):
         return close_price
 
     except Exception as e:
-        logging.warning(e)
+        logging.warning(f'check_stock_price price get error: {e}')
         return None
     
 async def edit_bot_message(text:str, event: Message | CallbackQuery, message_id: int | None = None, bot: Bot | None = None, markup: InlineKeyboardMarkup | None = None):
@@ -140,7 +140,7 @@ async def get_full_user_report(db: aiosqlite.Connection, user_id: int | None = N
             return await query.fetchall()
         
     async def get_history():
-        async with db.execute('SELECT id, stock, price, quantity, time FROM history WHERE user_id = ?', (main_info[0],)) as query:
+        async with db.execute('SELECT id, stock, price, quantity, time FROM history WHERE user_id = ? ORDER BY time ASC', (main_info[0],)) as query:
             return await query.fetchall()
     
     savings, history = await asyncio.gather(get_portfolio(), get_history())
@@ -197,3 +197,29 @@ async def send_message(bot: Bot, user_id: int, text: str, disable_notification: 
         return True
         
     return False
+
+
+# Compares username in DB with User's username for now, if different, changes username in DB
+async def username_db_check(event: Message | CallbackQuery, db: aiosqlite.Connection):
+    username = None
+    user_id = None
+
+    if isinstance(event, Message):
+        username = event.from_user.username
+        user_id = event.from_user.id
+    else:
+        username = event.from_user.username
+        user_id = event.from_user.id
+
+    if username is None:
+        return
+
+    async with db.execute('SELECT username FROM users WHERE id = ?', (user_id,)) as query:
+        username_db = await query.fetchone()
+
+    if not username_db:
+        return
+
+    if username_db[0] != username:
+       await db.execute('UPDATE users SET username = ? WHERE id = ?', (username, user_id,))
+       await db.commit()
