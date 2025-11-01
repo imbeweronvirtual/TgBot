@@ -15,10 +15,10 @@ from bot.admin import admin_router
 storage = MemoryStorage()
 
 
+#TODO: Tests, strings consts, UI
 
 
-
-# Define main function to start the bot
+# Define the main function to start the bot
 async def main():
     
     async with aiohttp.ClientSession() as http_session, \

@@ -24,7 +24,7 @@ class AdminStates(StatesGroup):
     confirmation_user_delete = State()
 
 
-# Define /cancel command handler and "cancel" text handler to cancel any ongoing state if callback button fails
+# Define /cancel command handler and "cancel" text handler to cancel any ongoing state if a callback button fails
 @admin_router.message(Command("cancel"))
 @admin_router.message(F.text.casefold() == "cancel")
 async def cancel_handler(message: Message, state: FSMContext) -> None:
@@ -137,7 +137,6 @@ async def broadcast_start(callback: CallbackQuery, state: FSMContext):
     
 
 @admin_router.message(AdminStates.waiting_text_broadcast, F.from_user.id.in_(ADMIN_IDS))
-#TODO: ignore_sender arg
 async def broadcast_send(message: Message, db: aiosqlite.Connection, state: FSMContext, bot: Bot, ignore_sender = IGNORE_SENDER):
     try:
         if ignore_sender:

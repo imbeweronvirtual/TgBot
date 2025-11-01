@@ -55,7 +55,7 @@ default_keyboard = Keyboards()
 # Define first /start command handler
 @form_router.message(CommandStart())
 async def cmd_start(message: Message, db: aiosqlite.Connection):
-    # Check if user exists in DB, if not, add them with a default balance of 10 000$
+    # Check if a user exists in DB, if not, add them with a default balance of 10 000$
     async with db.execute('SELECT * FROM users WHERE id = ?', (message.from_user.id,)) as query:
         if not await query.fetchone():
             await db.execute('INSERT INTO users (id, username) VALUES (?, ?)', (message.from_user.id, message.from_user.username if message.from_user.username else 'N/A',))
@@ -145,8 +145,8 @@ async def start_buy_callback(callback: CallbackQuery, state: FSMContext, bot: Bo
     await state.update_data(bot_message_id=callback.message.message_id)
 
 
-# Buy stock symbol handler after user sends symbol. Check if symbol is valid and get its price.
-# Then ask for amount to buy
+# Buy stock symbol handler after user sends symbol. Check if a symbol is valid and get its price.
+# Then ask for an amount to buy
 @form_router.message(StockStates.waiting_symbol_buy, F.text.regexp(r"^[A-Za-z]{1,5}$"))
 async def buy_symbol(message: Message, state: FSMContext, session: aiohttp.ClientSession, bot: Bot):
     await delete_unwanted(message)
@@ -177,7 +177,7 @@ async def buy_symbol(message: Message, state: FSMContext, session: aiohttp.Clien
     )
     
     
-# Buy stock amount handler after user sends amount. Check if user has enough balance and complete the purchase
+# Buy stock amount handler after a user sends amount. Check if the user has enough balances and complete the purchase
 @form_router.message(StockStates.waiting_amount_buy, F.text.regexp(r"^\d+$"))
 async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connection, session: aiohttp.ClientSession, bot: Bot):
     await delete_unwanted(message)
@@ -196,11 +196,11 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
         await state.clear()
         return
 
-    # Check if price has changed since user sent symbol. If it has, ask to confirm purchase again
+    # Check if price has changed since user sent symbol. If it has, ask to confirm the purchase again
     price = await check_stock_price(data['symbol'], session)
     if price is None:
         await edit_bot_message(
-            text='\n\n'.join([SERVER_ERROR_PRICE, DEFAULT_HELLO]),
+            text='\n\n'.join([ANY_ERROR, DEFAULT_HELLO]),
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
@@ -383,7 +383,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
         await state.clear()
         return
     
-    # Check if price has changed since user sent symbol. If it has, ask to confirm sell again
+    # Check if the price has changed since user sent symbol. If it has, ask to confirm sell again
     price = await check_stock_price(data['symbol'], session)
     if price is None:
         await edit_bot_message(
@@ -443,7 +443,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
 
 @form_router.callback_query(F.data==MY_STOCKS_CB)
 async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection, session: aiohttp.ClientSession):
-    # Query that joins two tables, first - users, for receiving balance of account, second = user_savings to receive stocks owned
+    # Query that joins two tables, first - users, for receiving balance of an account, second = user_savings to receive stocks owned
     async with db.execute('SELECT s.stock, s.quantity, u.cash FROM users u LEFT JOIN user_savings s ON u.id = s.user_id WHERE u.id = ?;', (callback.from_user.id,)) as query:
         savings = await query.fetchall()
         

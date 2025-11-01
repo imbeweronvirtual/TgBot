@@ -201,9 +201,6 @@ async def send_message(bot: Bot, user_id: int, text: str, disable_notification: 
 
 # Compares username in DB with User's username for now, if different, changes username in DB
 async def username_db_check(event: Message | CallbackQuery, db: aiosqlite.Connection):
-    username = None
-    user_id = None
-
     if isinstance(event, Message):
         username = event.from_user.username
         user_id = event.from_user.id
