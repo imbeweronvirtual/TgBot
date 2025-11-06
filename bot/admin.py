@@ -14,6 +14,9 @@ from .keyboards import Keyboards
 from config.callbacks import CHECK_USER_CB, SHOW_ALL_CB, BROADCAST_CB, DELETE_USER_CB
 from helpers import get_full_user_report, send_message
 from config.strings import DEFAULT_HELLO
+from config.strings_admin import SELECT_ACTION, NO_USERS, FOUND_USERS, PROMPT_TYPE_USER_ID, USER_LIST_ITEM, \
+    ERROR_USERS_FETCH, ERROR_USER_NOT_FOUND, PROMPT_TYPE_TEXT, RESULT_SEND, PROMPT_TYPE_USER_ID_DELETE, PROMPT_TYPE_YES, \
+    SUCCESS_DELETE, ERROR_DELETE_USER
 
 admin_router = Router()
 
@@ -36,18 +39,20 @@ async def cancel_handler(message: Message, state: FSMContext) -> None:
     logging.info("Cancelling state %r", current_state)
     await state.clear()
 
-    text = DEFAULT_HELLO.format(name=message.from_user.full_name)
     await message.answer(
-        "Cancelled.\n" + text,
+        text="Cancelled.\n" + DEFAULT_HELLO,
         reply_markup=Keyboards.default_keyboard(),
         parse_mode='HTML',
     )
 
+
+# Define /admin command handler and admin keyboard handler to start admin panel if user is admin
 @admin_router.message(Command('admin'), F.from_user.id.in_(ADMIN_IDS))
 async def admin_init(message: Message):
-    await message.answer('Select action you want to do:', reply_markup=Keyboards.admin_keyboard())
+    await message.answer(text=SELECT_ACTION, reply_markup=Keyboards.admin_keyboard())
 
 
+# Show all users callback
 @admin_router.callback_query(F.data==SHOW_ALL_CB, F.from_user.id.in_(ADMIN_IDS))
 async def show_all_users(callback: CallbackQuery, db: aiosqlite.Connection):
     try:
@@ -55,30 +60,31 @@ async def show_all_users(callback: CallbackQuery, db: aiosqlite.Connection):
             users_list = await query.fetchall()
 
         if users_list is None:
-            await callback.message.answer('You don\'t have any users yet', reply_markup=Keyboards.admin_keyboard())
+            await callback.message.answer(text=NO_USERS, reply_markup=Keyboards.admin_keyboard())
 
-        formatted_message = [f'Found {len(users_list)} users:\n']
+        formatted_message = [FOUND_USERS.format(quantity=len(users_list)) + '\n']
 
         for user_id, cash, created, username in users_list:
-            formatted_message.append(f'User_id: <code>{user_id}</code>, Username: @{username}, Balance: <code>{cash:.2f}</code>, created: <code>{created}</code>')
+            formatted_message.append(USER_LIST_ITEM.format(user_id=user_id, username=username, cash=cash, created=created))
             formatted_message.append(f'--------------')
 
         await callback.message.answer('\n'.join(formatted_message), reply_markup=Keyboards.admin_keyboard(), parse_mode='HTML')
     except Exception as e:
         logging.error(f'Error in show_all_users: {e}')
-        await callback.message.answer(f'Could not get users', reply_markup=Keyboards.admin_keyboard())
+        await callback.message.answer(text=ERROR_USERS_FETCH, reply_markup=Keyboards.admin_keyboard())
     finally:
         await callback.answer()
 
 
-
+# Show user info callback
 @admin_router.callback_query(F.data==CHECK_USER_CB, F.from_user.id.in_(ADMIN_IDS))
 async def check_user_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_user_id_check)
-    await callback.message.answer('Type user id or username of user you want to check')
+    await callback.message.answer(text=PROMPT_TYPE_USER_ID)
     await callback.answer()
     
 
+# Return full user info
 @admin_router.message(AdminStates.waiting_user_id_check, F.from_user.id.in_(ADMIN_IDS))
 async def get_user_info(message: Message, state: FSMContext, db: aiosqlite.Connection):
     user_id = None
@@ -95,7 +101,7 @@ async def get_user_info(message: Message, state: FSMContext, db: aiosqlite.Conne
     report = await get_full_user_report(db=db, user_id=user_id, username=username)
     
     if not report:
-        await message.answer(f"User with ID or Username <code>{user_id if user_id else username}</code> not found.",
+        await message.answer(text=ERROR_USER_NOT_FOUND.format(user_id=user_id if user_id else username),
                              reply_markup=Keyboards.admin_keyboard(),
                              parse_mode="HTML"
         )
@@ -128,14 +134,16 @@ async def get_user_info(message: Message, state: FSMContext, db: aiosqlite.Conne
     await state.clear()
     await message.answer(text='\n'.join(response), reply_markup=Keyboards.admin_keyboard(), parse_mode='HTML')
     
-    
+
+# Broadcast message callback
 @admin_router.callback_query(F.data==BROADCAST_CB, F.from_user.id.in_(ADMIN_IDS))
 async def broadcast_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_text_broadcast)
-    await callback.message.answer('Type text you want to send all users')
+    await callback.message.answer(text=PROMPT_TYPE_TEXT)
     await callback.answer()
     
 
+# Broadcast message handler
 @admin_router.message(AdminStates.waiting_text_broadcast, F.from_user.id.in_(ADMIN_IDS))
 async def broadcast_send(message: Message, db: aiosqlite.Connection, state: FSMContext, bot: Bot, ignore_sender = IGNORE_SENDER):
     try:
@@ -147,11 +155,11 @@ async def broadcast_send(message: Message, db: aiosqlite.Connection, state: FSMC
                 user_ids = await query.fetchall()
     except Exception as e:
         logging.error(f'Error in broadcast_send: {e}')
-        await message.answer(f'Could not get users from database', reply_markup=Keyboards.admin_keyboard())
+        await message.answer(text=ERROR_USERS_FETCH, reply_markup=Keyboards.admin_keyboard())
     
     if not user_ids:
         await state.clear()
-        await message.answer('No users found, can\'t be completed', reply_markup=Keyboards.admin_keyboard())
+        await message.answer(text=NO_USERS, reply_markup=Keyboards.admin_keyboard())
         return
     
     count = 0
@@ -161,19 +169,22 @@ async def broadcast_send(message: Message, db: aiosqlite.Connection, state: FSMC
             count += 1
     
     await state.clear()
-    await message.answer(f'Message:\n <code>{message.text}</code>\n\n was sent {count} users!',
+
+    await message.answer(text=RESULT_SEND.format(message_text=message.text, count=count),
                          reply_markup=Keyboards.admin_keyboard(),
                          parse_mode='HTML'
     )
     
 
+# Delete user callback
 @admin_router.callback_query(F.data==DELETE_USER_CB, F.from_user.id.in_(ADMIN_IDS))
 async def delete_user_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_user_id_delete)
-    await callback.message.answer('Type user id of user you want to delete')
+    await callback.message.answer(text=PROMPT_TYPE_USER_ID_DELETE)
     await callback.answer()
     
 
+# Delete user handler
 @admin_router.message(AdminStates.waiting_user_id_delete, F.from_user.id.in_(ADMIN_IDS))
 async def confirm_user_delete(message: Message, state: FSMContext, db: aiosqlite.Connection):
     async with db.execute('SELECT id FROM users WHERE id = ?', (message.text,)) as query:
@@ -181,14 +192,15 @@ async def confirm_user_delete(message: Message, state: FSMContext, db: aiosqlite
         
     if not user_id:
         await state.clear()
-        await message.answer(f'User {message.text} not found', reply_markup=Keyboards.admin_keyboard())
+        await message.answer(text=ERROR_USER_NOT_FOUND.format(user_id=message.text), reply_markup=Keyboards.admin_keyboard())
         return
     
     await state.update_data(id=user_id[0])
     await state.set_state(AdminStates.confirmation_user_delete)
-    await message.answer(f'Confirm your action to delete user {user_id[0]} with \"yes\" if you want to delete or type anything else if you want to cancel')
+    await message.answer(text=PROMPT_TYPE_YES.format(user_id=user_id[0]), parse_mode='HTML')
     
 
+# Confirm user delete handler
 @admin_router.message(AdminStates.confirmation_user_delete, F.from_user.id.in_(ADMIN_IDS))
 async def user_delete(message: Message, state: FSMContext, db: aiosqlite.Connection):
     if message.text.lower().strip() != 'yes':
@@ -208,14 +220,14 @@ async def user_delete(message: Message, state: FSMContext, db: aiosqlite.Connect
 
         await db.commit()
         
-        await message.answer(f'✅ Successfully deleted all data for user {data['id']}',
+        await message.answer(text=SUCCESS_DELETE.format(user_id=data['id']),
                              reply_markup=Keyboards.admin_keyboard()
         )
 
     except Exception as e:
         logging.error(f"Failed to delete user {data['id']}: {e}")
         await db.rollback()
-        await message.answer(f"Error during deletion: {e}\nAll changes have been rolled back.",
+        await message.answer(text=ERROR_DELETE_USER.format(e=e),
                              reply_markup=Keyboards.admin_keyboard()
         )
 

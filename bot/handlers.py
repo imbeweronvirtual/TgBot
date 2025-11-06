@@ -71,7 +71,7 @@ async def return_main(callback: CallbackQuery, state: FSMContext, db: aiosqlite.
     await edit_bot_message(
         text=DEFAULT_HELLO,
         event=callback,
-        markup=Keyboards.default_keyboard()
+        reply_markup=Keyboards.default_keyboard()
     )
     
     current_state = await state.get_state()
@@ -92,7 +92,7 @@ async def price_callback(callback: CallbackQuery, state: FSMContext):
     await edit_bot_message(
         text=SEND_SYMBOL_CHECK,
         event=callback,
-        markup=Keyboards.return_keyboard()
+        reply_markup=Keyboards.return_keyboard()
     )
     await callback.answer()
 
@@ -105,15 +105,15 @@ async def check_price(message: Message, state: FSMContext, session: aiohttp.Clie
     data = await state.get_data()
     
     price = await check_stock_price(message.text, session)
-    # If price is None then response from API was invalid(any error)
+    # If price is None then symbol was invalid
     if price is None:
-        text = [ANY_ERROR, DEFAULT_HELLO]
+        text = [INVALID_SYMBOL, DEFAULT_HELLO]
         await edit_bot_message(
             text='\n\n'.join(text),
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -123,7 +123,7 @@ async def check_price(message: Message, state: FSMContext, session: aiohttp.Clie
         event=message,
         message_id=data.get('bot_message_id'),
         bot=bot,
-        markup=Keyboards.default_keyboard()
+        reply_markup=Keyboards.default_keyboard()
     )
     await state.clear()
     
@@ -138,7 +138,7 @@ async def start_buy_callback(callback: CallbackQuery, state: FSMContext, bot: Bo
         event=callback,
         message_id=callback.message.message_id,
         bot=bot,
-        markup=Keyboards.return_keyboard()
+        reply_markup=Keyboards.return_keyboard()
     )
     await state.set_state(StockStates.waiting_symbol_buy)
     await callback.answer()
@@ -152,7 +152,7 @@ async def buy_symbol(message: Message, state: FSMContext, session: aiohttp.Clien
     await delete_unwanted(message)
     
     data = await state.get_data()
-    
+
     price = await check_stock_price(message.text, session)
     if price is None:
         await edit_bot_message(
@@ -160,7 +160,7 @@ async def buy_symbol(message: Message, state: FSMContext, session: aiohttp.Clien
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -173,7 +173,7 @@ async def buy_symbol(message: Message, state: FSMContext, session: aiohttp.Clien
         event=message,    
         message_id=data.get('bot_message_id'),
         bot=bot,
-        markup=Keyboards.return_keyboard()
+        reply_markup=Keyboards.return_keyboard()
     )
     
     
@@ -191,7 +191,7 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -200,11 +200,11 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
     price = await check_stock_price(data['symbol'], session)
     if price is None:
         await edit_bot_message(
-            text='\n\n'.join([ANY_ERROR, DEFAULT_HELLO]),
+            text='\n\n'.join([SERVER_ERROR_PRICE, DEFAULT_HELLO]),
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -215,7 +215,7 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -234,7 +234,7 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
                     event=message,
                     message_id=data.get('bot_message_id'),
                     bot=bot,
-                    markup=Keyboards.default_keyboard()
+                    reply_markup=Keyboards.default_keyboard()
                 )
                 return
             # Complete the purchase: deduct money from balance and add stocks to user_savings table
@@ -252,7 +252,7 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
                     event=message,
                     message_id=data.get('bot_message_id'),
                     bot=bot,
-                    markup=Keyboards.default_keyboard()
+                    reply_markup=Keyboards.default_keyboard()
                 )
     except Exception as e:
         await db.rollback()
@@ -262,7 +262,7 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
     finally:
         await state.clear()
@@ -278,7 +278,7 @@ async def start_sell_callback(callback: CallbackQuery, state: FSMContext, bot: B
         await edit_bot_message(
             text=NO_STOCKS,
             event=callback,
-            markup=Keyboards.return_keyboard()
+            reply_markup=Keyboards.return_keyboard()
         )
         return
     else:
@@ -292,7 +292,7 @@ async def start_sell_callback(callback: CallbackQuery, state: FSMContext, bot: B
             event=callback,
             message_id=callback.message.message_id,
             bot=bot,
-            markup=Keyboards.return_keyboard()
+            reply_markup=Keyboards.return_keyboard()
         )
         
         await state.set_state(StockStates.waiting_symbol_sell)
@@ -321,7 +321,7 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
                 event=message,
                 message_id=data.get('bot_message_id'),
                 bot=bot,
-                markup=Keyboards.default_keyboard()
+                reply_markup=Keyboards.default_keyboard()
             )
             await state.clear()
             return
@@ -329,11 +329,11 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
     price = await check_stock_price(stock[0], session)
     if price is None:
         await edit_bot_message(
-            text='\n\n'.join([ANY_ERROR, DEFAULT_HELLO]),
+            text='\n\n'.join([SERVER_ERROR_PRICE, DEFAULT_HELLO]),
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -345,7 +345,7 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
         event=message,
         message_id=data.get('bot_message_id'),
         bot=bot,
-        markup=Keyboards.return_keyboard()
+        reply_markup=Keyboards.return_keyboard()
     )
 
 
@@ -366,7 +366,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -378,7 +378,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -387,11 +387,11 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
     price = await check_stock_price(data['symbol'], session)
     if price is None:
         await edit_bot_message(
-            text='\n\n'.join([ANY_ERROR, DEFAULT_HELLO]),
+            text='\n\n'.join([SERVER_ERROR_PRICE, DEFAULT_HELLO]),
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -402,7 +402,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         await state.clear()
         return
@@ -425,7 +425,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
         logging.error(f'Error occurred while selling stock: {e}')
         return
@@ -436,7 +436,7 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
             event=message,
             message_id=data.get('bot_message_id'),
             bot=bot,
-            markup=Keyboards.default_keyboard()
+            reply_markup=Keyboards.default_keyboard()
         )
     await state.clear()
     
@@ -466,7 +466,7 @@ async def check_savings(callback: CallbackQuery, db: aiosqlite.Connection, sessi
             formatted_message.append('\n❌ Service not available now')
         
     
-    await edit_bot_message(text='\n'.join(formatted_message), event=callback, markup=Keyboards.return_keyboard())
+    await edit_bot_message(text='\n'.join(formatted_message), event=callback, reply_markup=Keyboards.return_keyboard())
     await callback.answer()
         
     
