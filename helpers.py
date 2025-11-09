@@ -123,7 +123,7 @@ async def edit_bot_message(text:str, event: Message | CallbackQuery, message_id:
     await event.answer(text, reply_markup=reply_markup, parse_mode='HTML')
     
 
-async def calc_profit(user_id: int, stock: str, db: aiosqlite.Connection) -> float:
+async def calc_profit(user_id: int, quantity_yet: int, stock: str, db: aiosqlite.Connection) -> float:
     """
     Calculate the profit remaining for a specific user and stock based on transaction history.
 
@@ -135,37 +135,32 @@ async def calc_profit(user_id: int, stock: str, db: aiosqlite.Connection) -> flo
 
     Parameters:
     user_id (int): The ID of the user whose profit is being calculated.
+    quantity_yet (int): Quantity of stocks owned by the user.
     stock (str): The stock symbol for which the profit is being calculated.
     db (aiosqlite.Connection): The database connection instance.
 
     Returns:
     float: The total remaining profit for the user and the specified stock.
     """
-    async with db.execute('SELECT quantity, price FROM history WHERE user_id = ? AND stock = ?', (user_id, stock,)) as query:
+
+    async with db.execute("""SELECT quantity, price FROM history
+                             WHERE user_id = ?
+                               AND stock = ?
+                               AND quantity > 0
+                             ORDER BY id DESC""",
+                          (user_id, stock,)) as query:
         transactions = await query.fetchall()
          
-    transactions_stack = []
-    profit = 0.0
-    
+    money_spent = 0.0
     for quantity, price in transactions:
-        if quantity > 0:
-            transactions_stack.append([quantity, price])
-        if quantity < 0:
-            quantity = -quantity
-            
-            while quantity > 0 and transactions_stack:
-                diff = min(quantity, transactions_stack[0][0])
-                
-                transactions_stack[0][0] -= diff
-                quantity -= diff
-                
-                if transactions_stack[0][0] == 0:
-                    transactions_stack.pop(0)
+        diff = min(quantity, quantity_yet)
+        money_spent += (diff * price)
+        quantity_yet -= diff
+
+        if quantity_yet == 0:
+            break
     
-    for quantity, price in transactions_stack:
-        profit += quantity * price
-    
-    return profit
+    return money_spent
 
 async def fetch_stock_data(user_id: int, stock: str, quantity: int, session: aiohttp.ClientSession, db: aiosqlite.Connection) -> str:
     """
@@ -196,10 +191,10 @@ async def fetch_stock_data(user_id: int, stock: str, quantity: int, session: aio
             logging.warning(f"Got zero price for {stock}, skipping calculation.")
             return f"  • <b>{stock}:</b> {quantity}pcs. (Error: <code>Price is $0.00</code>)"
         
-        earned = await calc_profit(user_id=user_id, stock=stock, db=db)
+        money_spent = await calc_profit(user_id=user_id, quantity_yet=quantity, stock=stock, db=db)
         
         total = price * quantity
-        pure_profit = total - earned
+        pure_profit = total - money_spent
         
         # Return the final string for this one stock
         return f"  • <b>{stock}:</b> {quantity}pcs. (Total: <b>${total:,.2f}</b> / Profit: <b>${pure_profit:,.2f}</b>)"
@@ -325,14 +320,10 @@ async def username_db_check(event: Message | CallbackQuery, db: aiosqlite.Connec
     Returns:
     None
     """
-    if isinstance(event, Message):
-        username = event.from_user.username
-        user_id = event.from_user.id
-    else:
-        username = event.from_user.username
-        user_id = event.from_user.id
+    username = event.from_user.username
+    user_id = event.from_user.id
 
-    if username is None:
+    if username is None: #TODO: Maybe do not stop func here
         return
 
     async with db.execute('SELECT username FROM users WHERE id = ?', (user_id,)) as query:
