@@ -240,8 +240,10 @@ async def buy_amount(message: Message, state: FSMContext, db: aiosqlite.Connecti
             # Complete the purchase: deduct money from balance and add stocks to user_savings table
             else:
                 await db.execute('UPDATE users SET cash = cash - ? WHERE id = ?', (total_price, message.from_user.id))
-                await db.execute('INSERT INTO user_savings (user_id, stock, quantity) VALUES (?, ?, ?) ON CONFLICT(user_id, stock) DO UPDATE SET quantity = quantity + excluded.quantity',
-                                (message.from_user.id, data['symbol'], amount,))
+                await db.execute("""INSERT INTO user_savings (user_id, stock, quantity) VALUES (?, ?, ?) 
+                    ON CONFLICT(user_id, stock)
+                    DO UPDATE SET quantity = quantity + excluded.quantity""",
+                                 (message.from_user.id, data['symbol'], amount,))
                 await db.execute('INSERT INTO history (user_id, stock, price, quantity) VALUES (?, ?, ?, ?)',
                                     (message.from_user.id, data['symbol'], price, amount,))
                 await db.commit()
@@ -352,14 +354,10 @@ async def sell_symbol(message: Message, state: FSMContext, db: aiosqlite.Connect
 @form_router.message(StockStates.waiting_amount_sell, F.text.regexp(r"^\d+$"))
 async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connection, session: aiohttp.ClientSession, bot: Bot):
     await delete_unwanted(message)
-    
+
     data = await state.get_data()
-    
+
     amount = int(message.text)
-    
-    async with db.execute('SELECT quantity FROM user_savings WHERE user_id = ? AND stock = ?', (message.from_user.id, data['symbol'])) as query:
-        available_amount = await query.fetchone()
-    
     if amount <= 0:
         await edit_bot_message(
             text='\n\n'.join([INVALID_AMOUNT, DEFAULT_HELLO]),
@@ -370,7 +368,10 @@ async def sell_amount(message: Message, state: FSMContext, db: aiosqlite.Connect
         )
         await state.clear()
         return
-    
+
+
+    async with db.execute('SELECT quantity FROM user_savings WHERE user_id = ? AND stock = ?', (message.from_user.id, data['symbol'])) as query:
+        available_amount = await query.fetchone()
     if not available_amount or amount > available_amount[0]:
         text = [NOT_ENOUGH_STOCKS.format(symbol=data['symbol'], asked_amount=amount, owned_amount=available_amount[0]), DEFAULT_HELLO]
         await edit_bot_message(
