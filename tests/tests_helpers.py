@@ -13,8 +13,6 @@ from helpers import check_stock_price, calc_profit, fetch_stock_data, username_d
 
 pytestmark = pytest.mark.asyncio
 
-ALPHA_API = 'YV-------'
-
 async def test_check_stock_price(mocker):
     json_response = {
             "Meta Data": {
