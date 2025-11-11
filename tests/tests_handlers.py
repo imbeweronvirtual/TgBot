@@ -192,3 +192,49 @@ async def test_sell_amount(db, mocker):
     assert user_cash[0] == 11600.00
     assert user_stocks[0] == 2
     assert selled_stocks[0] == -10
+
+async def test_sell_amount_changed_price(db, mocker):
+    mock_state = mocker.Mock(spec=FSMContext)
+    mock_state.get_data = mocker.AsyncMock()
+    mock_state.get_data.return_value = {'symbol': 'AAPL', 'price': 152.90, 'bot_message_id': 1}
+
+    mock_user = mocker.Mock(spec=User)
+    mock_user.id = 1
+
+    mock_message = mocker.Mock(spec=Message)
+    mock_message.from_user = mock_user
+    mock_message.text = 10
+    mock_message.chat = mocker.Mock(spec=Chat)
+    mock_message.chat.id = 123
+
+    mock_bot = mocker.Mock(spec=Bot)
+    mock_conn = mocker.AsyncMock(spec=aiohttp.ClientSession)
+
+    mock_check_price = mocker.patch(
+        'bot.handlers.check_stock_price',
+        return_value = 150.00 # Important! Price here is bigger than in mock_state
+        # because user would sell his stock if the price is now bigger as it was earlier
+    )
+
+    await db.execute('INSERT INTO users (id, username) VALUES (?, ?)', (mock_user.id, 'test'))
+    await db.execute('INSERT INTO user_savings (user_id, stock, quantity) VALUES (?, ?, ?)',
+                     (mock_user.id, 'AAPL', 12)
+                     )
+    await db.commit()
+
+    await sell_amount(mock_message, mock_state, db=db, session=mock_conn, bot=mock_bot)
+
+    mock_check_price.assert_called_once_with('AAPL', mock_conn)
+
+    async with db.execute('SELECT cash FROM users') as query:
+        user_cash = await query.fetchone()
+
+    async with db.execute('SELECT quantity FROM user_savings') as query:
+        user_stocks = await query.fetchone()
+
+    async with db.execute('SELECT quantity FROM history') as query:
+        selled_stocks = await query.fetchone()
+
+    assert user_cash[0] == 10000.00
+    assert user_stocks[0] == 12
+    assert selled_stocks is None
