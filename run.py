@@ -11,12 +11,8 @@ from config.config import TOKEN
 from bot.handlers import form_router
 from bot.admin import admin_router
 
-# Initialize storage and router
+# Initialize storage
 storage = MemoryStorage()
-
-
-#TODO: Tests, strings consts, UI
-
 
 # Define the main function to start the bot
 async def main():
