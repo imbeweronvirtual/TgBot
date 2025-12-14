@@ -105,4 +105,4 @@ Telegram Bot/
 
 The bot uses a relational SQLite database structure:
 
-![Database Schema]()
+![Database Schema](https://github.com/user-attachments/assets/01d73336-b185-4742-addd-c1937b1cb3fe)
