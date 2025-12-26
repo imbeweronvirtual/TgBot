@@ -69,6 +69,7 @@ BOT_TOKEN=your_telegram_bot_token
 ADMIN_IDS=12345678,87654321
 ALPHA_API=your_alpha_vantage_key
 ```
+Remember to delete .example from the name of .env file.
 
 ### 5. Run the Bot
 ```bash
