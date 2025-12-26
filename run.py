@@ -20,46 +20,41 @@ async def main():
     async with aiohttp.ClientSession() as http_session, \
                 aiosqlite.connect('database/bot_db.db') as db_session:
 
-        async with db_session.execute('SELECT COUNT(*) FROM sqlite_master WHERE type="table" AND name="users"') as query:
-            if not await query.fetchone():
-                await db_session.execute("""
-                                         CREATE TABLE users (id INTEGER PRIMARY KEY NOT NULL,
-                                                             cash NUMERIC NOT NULL DEFAULT 10000.00,
-                                                             created DATE NOT NULL DEFAULT (date()),
-                                                             username TEXT null on conflict ignore)
-                                         """)
-                await db_session.commit()
+        await db_session.execute("""
+                                 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY NOT NULL,
+                                                     cash NUMERIC NOT NULL DEFAULT 10000.00,
+                                                     created DATE NOT NULL DEFAULT (date()),
+                                                     username TEXT null on conflict ignore)
+                                 """)
 
-        async with db_session.execute('SELECT COUNT(*) FROM sqlite_master WHERE type="table" AND name="user_savings"') as query:
-            if not await query.fetchone():
-                await db_session.execute("""
-                                         CREATE TABLE user_savings (user_id INTEGER NOT NULL,
-                                                                    stock TEXT NOT NULL,
-                                                                    quantity INTEGER NOT NULL,
-                                                                    PRIMARY KEY (user_id, stock),
-                                                                    FOREIGN KEY (user_id) REFERENCES users(id));
-                                         CREATE TRIGGER delete_zero_quantity
-                                         AFTER UPDATE ON user_savings
-                                         FOR EACH ROW
-                                         WHEN NEW.quantity = 0
-                                         BEGIN
-                                             DELETE FROM user_savings WHERE user_id = NEW.user_id AND stock = NEW.stock;
-                                         END;
-                                         """)
-                await db_session.commit()
+        await db_session.execute("""
+                                 CREATE TABLE IF NOT EXISTS user_savings (user_id INTEGER NOT NULL,
+                                                            stock TEXT NOT NULL,
+                                                            quantity INTEGER NOT NULL,
+                                                            PRIMARY KEY (user_id, stock),
+                                                            FOREIGN KEY (user_id) REFERENCES users(id))
+                                 """)
 
-        async with db_session.execute('SELECT COUNT(*) FROM sqlite_master WHERE type="table" AND name="history"') as query:
-            if not await query.fetchone():
-                await db_session.execute("""
-                                         CREATE TABLE history (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                                               user_id INTEGER NOT NULL,
-                                                               stock TEXT NOT NULL,
-                                                               price NUMERIC NOT NULL,
-                                                               quantity INTEGER NOT NULL,
-                                                               time NUMERIC DEFAULT (datetime('now')),
-                                         FOREIGN KEY (user_id) REFERENCES users(id));
-                                         """)
-                await db_session.commit()
+        await db_session.execute("""CREATE TRIGGER IF NOT EXISTS delete_zero_quantity
+                                 AFTER UPDATE ON user_savings
+                                 FOR EACH ROW
+                                 WHEN NEW.quantity = 0
+                                 BEGIN
+                                     DELETE FROM user_savings WHERE user_id = NEW.user_id AND stock = NEW.stock;
+                                 END
+                                 """)
+
+        await db_session.execute("""
+                                 CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                       user_id INTEGER NOT NULL,
+                                                       stock TEXT NOT NULL,
+                                                       price NUMERIC NOT NULL,
+                                                       quantity INTEGER NOT NULL,
+                                                       time NUMERIC DEFAULT (datetime('now')),
+                                                       FOREIGN KEY (user_id) REFERENCES users(id))
+                                 """)
+
+        await db_session.commit()
 
         bot = Bot(token=TOKEN)
 
