@@ -70,3 +70,5 @@ async def main():
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
+
+#TODO: Found possible bug with transactions .commit and .rollback between multiple users
